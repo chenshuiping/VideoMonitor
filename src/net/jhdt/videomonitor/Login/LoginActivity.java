@@ -1,16 +1,26 @@
 package net.jhdt.videomonitor.Login;
 
+import java.io.ByteArrayInputStream;
+import java.io.DataInputStream;
 import java.io.IOException;
+import java.nio.ByteBuffer;
 import java.nio.channels.SocketChannel;
 
 import net.jhdt.videomonitor.R;
 import net.jhdt.videomonitor.Socket.SocketManager;
+import net.jhdt.videomonitor.Socket.TCPClient;
+import net.jhdt.videomonitor.Socket.Model.CmdName;
+import net.jhdt.videomonitor.Socket.Model.FKInfo;
+import net.jhdt.videomonitor.Socket.Model.ProtocolHead;
+import net.jhdt.videomonitor.Socket.Util.SocketUtil;
+import net.jhdt.videomonitor.util.ByteUtil;
 import android.app.Activity;
 import android.content.Intent;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Handler.Callback;
 import android.os.Message;
+import android.text.TextUtils;
 import android.util.Log;
 import android.view.View;
 import android.widget.EditText;
@@ -20,82 +30,213 @@ public class LoginActivity extends Activity {
 	private static final String LOG_TAG = "LoginActivity";
 	private EditText tv_userName;
 	private EditText tv_pass;
-	private SocketChannel channel; //Á¬½Ó·şÎñµÄÍ¨µÀ
-	
+
+	private SocketChannel channel; //è¿æ¥æœåŠ¡çš„é€šé“
+	private SocketManager sm;
+
+	private TCPClient client;//
+
 	public Handler handler = new Handler(new Callback() {
-		
 		@Override
 		public boolean handleMessage(Message msg) {
-			switch (msg.what) {
-			case 1: //connectÁ¬½Ó³É¹¦
-				Toast.makeText(LoginActivity.this, msg.obj.toString(), Toast.LENGTH_SHORT).show();
-				//ÑéÖ¤ÓÃ»§µÄºÏ·¨ĞÔ
-				break;
-			case 2: //Á¬½Ó³¬Ê±
-				try {
-					Toast.makeText(LoginActivity.this, msg.obj.toString(), Toast.LENGTH_SHORT).show();
-					channel.close();
-				} catch (IOException e) {
-					// TODO Auto-generated catch block
-					e.printStackTrace();
+			if (msg.what == -1) { //connectè¿æ¥æœ‰é”™
+				Toast.makeText(getApplicationContext(), (String)msg.obj, Toast.LENGTH_LONG).show();
+			} else if (msg.what == 1) { //æ¥æ”¶åˆ°æ•°æ®
+				ByteBuffer[] obj = (ByteBuffer[]) msg.obj;
+				ByteBuffer headBuf = ByteBuffer.allocate(ProtocolHead.length());
+				ByteBuffer bodyBuf = ByteBuffer.allocate(1024);
+				headBuf.put(obj[0]);
+				bodyBuf.put(obj[1]);
+				headBuf.flip();
+				bodyBuf.flip();
+				ProtocolHead headData = ProtocolHead.byte2Data(headBuf);
+				if (ProtocolHead.isValidHead(headData.consNID)) {
+					if (headData.cmdID == CmdName.ccConnect) {
+						//æ³¨å†Œ
+						byte[] subBody = new byte[headData.dataLen];
+						bodyBuf.get(subBody, 0, subBody.length);
+						ByteUtil.reverseByteOrder(subBody);
+						if (ByteUtil.byte2int(subBody) == 1) {
+							Log.v(LOG_TAG, "æ³¨å†ŒæˆåŠŸ");
+						} else {
+							Log.v(LOG_TAG, "æ³¨å†Œå¤±è´¥");
+						}
+					}
 				}
-				break;
-			case 3: //¶Ë¿Ú²»´æÔÚ£¬»òÕßÍøÂç²»Í¨
-				Toast.makeText(LoginActivity.this, msg.obj.toString(), Toast.LENGTH_SHORT).show();
-				break;
-			default:
-				break;
 			}
+
+			//			switch (msg.what) {
+			//			case 1: //connectè¿æ¥æˆåŠŸ
+			//				Toast.makeText(LoginActivity.this, msg.obj.toString(), Toast.LENGTH_SHORT).show();
+			//				//éªŒè¯ç”¨æˆ·åˆæ³•æ€§
+			//				//å¡«å……å¤´æ•°
+			//				//å‘é€
+			//				Thread thread = new Thread(new Runnable() {
+			//
+			//					@Override
+			//					public void run() {
+			//						ProtocolHead head = SocketUtil.ProtocolHeadUpdata(CmdName.ccConnect, FKInfo.length());
+			//						//å¡«å……å‰©ä½™æ•°æ®
+			//						FKInfo fkInfo = SocketUtil.FKInfoUpdata(tv_userName.getText().toString(), tv_pass.getText().toString());
+			//						//æ‰“å°å‘é€çš„æ•°æ®
+			//						//				Log.v(LOG_TAG, head.toString());
+			//						//				Log.v(LOG_TAG, fkInfo.toString());
+			//						ByteBuffer bb = ByteBuffer.allocateDirect(ProtocolHead.length() + FKInfo.length());
+			//						Log.v(LOG_TAG, "beforePosition = " + bb.position());
+			//						bb.put(head.data2Byte());
+			//						bb.put(fkInfo.data2Byte());
+			//						Log.v(LOG_TAG, "afterPosition = " + bb.position());
+			//						try {
+			//							bb.flip();
+			//							while(bb.hasRemaining())
+			//								channel.write(bb);
+			//							Log.v(LOG_TAG, "write finish....");
+			//							//
+			//							Selector selector = Selector.open();
+			//							channel.register(selector, SelectionKey.OP_READ);
+			//							ByteBuffer bf = ByteBuffer.allocate(1024);
+			//							while (true) {
+			//								int s = selector.select();
+			//								if (s == 0) {
+			//									Log.v(LOG_TAG, "continue....");
+			//									continue;
+			//								} else {
+			//									Log.v(LOG_TAG, "s = " + s);
+			//								}
+			//								Set set = selector.keys();
+			//								Iterator keyIterator = set.iterator();
+			//								while (keyIterator.hasNext()) {
+			//									SelectionKey object = (SelectionKey) keyIterator.next();
+			//									if (object.isReadable()) {
+			//										Log.v(LOG_TAG, "è¯»åˆ°æ•°æ®äº†ã€‚ã€‚ã€‚ã€‚ã€‚ã€‚ã€‚ã€‚ã€‚ã€‚");
+			//										SocketChannel channel = (SocketChannel)object.channel();
+			//										channel.read(bf);
+			//										Log.v(LOG_TAG, bf.toString());
+			//										bf.clear();
+			//									}
+			//									keyIterator.remove();
+			//									
+			//								}
+			//							}
+			//						} catch (IOException e1) {
+			//							// TODO Auto-generated catch block
+			//							e1.printStackTrace();
+			//						}
+			//					}
+			//				});
+			//				break;
+			//			case 2: //è¿æ¥è¶…æ—¶
+			//				try {
+			//					Toast.makeText(LoginActivity.this, msg.obj.toString(), Toast.LENGTH_SHORT).show();
+			//					channel.close();
+			//				} catch (IOException e) {
+			//					// TODO Auto-generated catch block
+			//					e.printStackTrace();
+			//				}
+			//				break;
+			//			case 3: //ç«¯å£ä¸å­˜åœ¨æˆ–è€…ç½‘ç»œä¸é€š
+			//				Toast.makeText(LoginActivity.this, msg.obj.toString(), Toast.LENGTH_SHORT).show();
+			//				break;
+			//			default:
+			//				break;
+			//			}
 			return false;
 		}
 	});
-	
+
 	@Override
 	protected void onCreate(Bundle savedInstanceState) {
 		// TODO Auto-generated method stub
 		super.onCreate(savedInstanceState);
 		setContentView(R.layout.login_activity_layout);
+		Log.v(LOG_TAG, "onCreate");
+		client = new TCPClient("112.2.6.77", 5680, handler);
+		// è¿æ¥ä¸­å¿ƒ
+		client.ConnectToHost();
+	}
+
+	@Override
+	protected void onStart() {
+		// TODO Auto-generated method stub
+		super.onStart();
+		Log.v(LOG_TAG, "onStart");
+	}
+
+	@Override
+	protected void onResume() {
+		// TODO Auto-generated method stub
+		super.onResume();
+		Log.v(LOG_TAG, "onResume");
+	}
+
+	@Override
+	protected void onPause() {
+		// TODO Auto-generated method stub
+		super.onPause();
+		Log.v(LOG_TAG, "onPause");
+	}
+
+	@Override
+	protected void onStop() {
+		// TODO Auto-generated method stub
+		super.onStop();
+		Log.v(LOG_TAG, "onStop");
+	}
+
+	@Override
+	protected void onRestart() {
+		// TODO Auto-generated method stub
+		super.onRestart();
+		Log.v(LOG_TAG, "onRestart");
+	}
+
+	@Override
+	protected void onDestroy() {
+		// TODO Auto-generated method stub
+		super.onDestroy();
+		Log.v(LOG_TAG, "onDestroy");
+		System.exit(0);
 	}
 
 	/**
-	 * µÇÂ¼°´Å¥´¦Àí
+	 * ç™»å½•æŒ‰é’®å¤„ç†
 	 * @param v
 	 */
 	public void onClickBtnLogin(View v) {
-//		tv_userName = (EditText) findViewById(R.id.userName);
-//		if (TextUtils.isEmpty(tv_userName.getText())) {
-//			Toast.makeText(this, "ÇëÊäÈëÓÃ»§Ãû", Toast.LENGTH_SHORT).show();
-//			return;
-//		}
-//		tv_pass = (EditText) findViewById(R.id.password);
-//		if (TextUtils.isEmpty(tv_pass.getText())) {
-//			Toast.makeText(this, "ÇëÊäÈëÃÜÂë", Toast.LENGTH_SHORT).show();
-//			return;
-//		}
 
-		try {
-			
-			if (channel != null && channel.isOpen()) { 
-				if (channel.isConnectionPending()) {
-					Log.v(LOG_TAG, "ÕıÔÚÁ¬½ÓÖĞ¡£¡£¡£");
-					return;
-				} else {
-					channel.close();
-				}
-			}
-			channel = SocketChannel.open();
-			SocketManager sm = new SocketManager(handler, channel);
-		} catch (IOException e) {
-			// TODO Auto-generated catch block
-			e.printStackTrace();
+		tv_userName = (EditText) findViewById(R.id.userName);
+		if (TextUtils.isEmpty(tv_userName.getText())) {
+			Toast.makeText(this, "è¯·è¾“å…¥ç”¨æˆ·å", Toast.LENGTH_SHORT).show();
+			return;
 		}
-		
-//		Intent intent = new Intent(this, MainActivity.class);
-//		startActivity(intent);
-//		int requestCode = 1;
-//		startActivityForResult(intent, requestCode);
+		tv_pass = (EditText) findViewById(R.id.password);
+		if (TextUtils.isEmpty(tv_pass.getText())) {
+			Toast.makeText(this, "è¯·è¾“å…¥å¯†ç ", Toast.LENGTH_SHORT).show();
+			return;
+		}
+
+		ProtocolHead head = SocketUtil.ProtocolHeadUpdata(CmdName.ccConnect, FKInfo.length());
+		ByteBuffer headerBuf = ByteBuffer.allocate(ProtocolHead.length());
+		headerBuf.put(head.data2Byte());
+
+		FKInfo body = SocketUtil.FKInfoUpdata(tv_userName.getText().toString(), tv_pass.getText().toString());
+		ByteBuffer bodyBuf = ByteBuffer.allocate(FKInfo.length());
+		bodyBuf.put(body.data2Byte());
+
+		ByteBuffer[] bufferArray = {headerBuf, bodyBuf};
+
+		headerBuf.flip();
+		bodyBuf.flip();
+
+		client.SendDataToHost(bufferArray);
+
+
+		//		Intent intent = new Intent(this, MainActivity.class);
+		//		startActivity(intent);
+		//		int requestCode = 1;
+		//		startActivityForResult(intent, requestCode);
 	}
-	
+
 	@Override
 	protected void onActivityResult(int requestCode, int resultCode, Intent data) {
 		super.onActivityResult(requestCode, resultCode, data);
