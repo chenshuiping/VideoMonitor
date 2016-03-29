@@ -1,11 +1,9 @@
 package net.jhdt.videomonitor.Login;
 
-import java.io.ByteArrayInputStream;
-import java.io.DataInputStream;
-import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.channels.SocketChannel;
 
+import net.jhdt.videomonitor.MainActivity;
 import net.jhdt.videomonitor.R;
 import net.jhdt.videomonitor.Socket.SocketManager;
 import net.jhdt.videomonitor.Socket.TCPClient;
@@ -42,26 +40,41 @@ public class LoginActivity extends Activity {
 			if (msg.what == -1) { //connect连接有错
 				Toast.makeText(getApplicationContext(), (String)msg.obj, Toast.LENGTH_LONG).show();
 			} else if (msg.what == 1) { //接收到数据
-				ByteBuffer[] obj = (ByteBuffer[]) msg.obj;
-				ByteBuffer headBuf = ByteBuffer.allocate(ProtocolHead.length());
-				ByteBuffer bodyBuf = ByteBuffer.allocate(1024);
-				headBuf.put(obj[0]);
-				bodyBuf.put(obj[1]);
-				headBuf.flip();
-				bodyBuf.flip();
-				ProtocolHead headData = ProtocolHead.byte2Data(headBuf);
-				if (ProtocolHead.isValidHead(headData.consNID)) {
-					if (headData.cmdID == CmdName.ccConnect) {
-						//注册
-						byte[] subBody = new byte[headData.dataLen];
-						bodyBuf.get(subBody, 0, subBody.length);
-						ByteUtil.reverseByteOrder(subBody);
-						if (ByteUtil.byte2int(subBody) == 1) {
-							Log.v(LOG_TAG, "注册成功");
-						} else {
-							Log.v(LOG_TAG, "注册失败");
+				try {
+					ByteBuffer[] obj = (ByteBuffer[]) msg.obj;
+					ByteBuffer headBuf = ByteBuffer.allocate(ProtocolHead.length());
+					ByteBuffer bodyBuf = ByteBuffer.allocate(1024);
+					headBuf.put(obj[0]);
+					bodyBuf.put(obj[1]);
+					headBuf.flip();
+					bodyBuf.flip();
+					if (headBuf.limit() == ProtocolHead.length()) {
+						ProtocolHead headData = ProtocolHead.byte2Data(headBuf);
+						if (ProtocolHead.isValidHead(headData.consNID)) {
+							if (headData.cmdID == CmdName.ccConnect) {
+								//注册
+								if (headData.dataLen == bodyBuf.limit()) {
+									byte[] subBody = new byte[headData.dataLen];
+									bodyBuf.get(subBody, 0, subBody.length);
+									ByteUtil.reverseByteOrder(subBody);
+									if (ByteUtil.byte2int(subBody) == 1) {
+										Log.v(LOG_TAG, "登录成功");
+										Intent intent = new Intent(getApplicationContext(), MainActivity.class);
+										startActivity(intent);
+//										int requestCode = 1;
+//										startActivityForResult(intent, requestCode);
+									} else {
+										Toast.makeText(getApplicationContext(), "登录失败", Toast.LENGTH_SHORT).show();
+										Log.v(LOG_TAG, "登录失败");
+									}
+								}
+							} else if (headData.cmdID == CmdName.ccSameIdDeRegUp) {
+								Toast.makeText(getApplicationContext(), "该用户已经登录，请联系管理员", Toast.LENGTH_SHORT).show();
+							}
 						}
 					}
+				} catch (Exception e) {
+					throw new RuntimeException(e.toString());
 				}
 			}
 
@@ -147,12 +160,13 @@ public class LoginActivity extends Activity {
 	@Override
 	protected void onCreate(Bundle savedInstanceState) {
 		// TODO Auto-generated method stub
+		
 		super.onCreate(savedInstanceState);
 		setContentView(R.layout.login_activity_layout);
 		Log.v(LOG_TAG, "onCreate");
 		client = new TCPClient("112.2.6.77", 5680, handler);
 		// 连接中心
-		client.ConnectToHost();
+//		client.ConnectToHost();
 	}
 
 	@Override
@@ -203,7 +217,9 @@ public class LoginActivity extends Activity {
 	 * @param v
 	 */
 	public void onClickBtnLogin(View v) {
-
+		// 销毁通道，否则重复注册中心没有响应，只有断开连接再重新连接才有响应
+		client.destroyChannel();
+		
 		tv_userName = (EditText) findViewById(R.id.userName);
 		if (TextUtils.isEmpty(tv_userName.getText())) {
 			Toast.makeText(this, "请输入用户名", Toast.LENGTH_SHORT).show();
@@ -218,23 +234,16 @@ public class LoginActivity extends Activity {
 		ProtocolHead head = SocketUtil.ProtocolHeadUpdata(CmdName.ccConnect, FKInfo.length());
 		ByteBuffer headerBuf = ByteBuffer.allocate(ProtocolHead.length());
 		headerBuf.put(head.data2Byte());
-
+		
 		FKInfo body = SocketUtil.FKInfoUpdata(tv_userName.getText().toString(), tv_pass.getText().toString());
 		ByteBuffer bodyBuf = ByteBuffer.allocate(FKInfo.length());
 		bodyBuf.put(body.data2Byte());
-
 		ByteBuffer[] bufferArray = {headerBuf, bodyBuf};
-
+		
 		headerBuf.flip();
 		bodyBuf.flip();
-
+		//发送注册命令
 		client.SendDataToHost(bufferArray);
-
-
-		//		Intent intent = new Intent(this, MainActivity.class);
-		//		startActivity(intent);
-		//		int requestCode = 1;
-		//		startActivityForResult(intent, requestCode);
 	}
 
 	@Override
